@@ -19,10 +19,10 @@ class CabDriver():
         # action_space will of (p,q) where p->pickup location, q->drop location
         self.action_space = [(0,0),
                              (0,1), (0,2), (0,3), (0,4),
-                             (1,1), (1,2), (1,3), (1,4),
-                             (2,1), (2,2), (2,3), (2,4),
-                             (3,1), (3,2), (3,3), (3,4),
-                             (4,1), (4,2), (4,3), (4,4)]
+                             (1,0), (1,2), (1,3), (1,4),
+                             (2,1), (2,0), (2,3), (2,4),
+                             (3,1), (3,2), (3,0), (3,4),
+                             (4,1), (4,2), (4,3), (4,0)]
         
         #state_space id defined by current location, hour of the day and day of the week i.e (locations, max_hours, max_days)
         self.state_space = [[loc,hour,day] for loc in range(locations) for hour in range(max_hours) for day in range(max_days)]
@@ -41,12 +41,12 @@ class CabDriver():
         """convert the state into a vector so that it can be fed to the NN. This method converts a given state into a vector format. Hint: The vector is of size m + t + d."""
         
         # initiate a list of size (m+t+d) with 0
-        state_encoded = [0] * (m+t+d)    
+        state_encoded = [0] * (locations + max_hours + max_days)    
         
         # Based on the input from state information, encode the list with 1 w.r.t its location, time and day.
-        state_encoded[st[0]] = 1
-        state_encoded[m + st[1]] = 1
-        state_encoded[m + t + st[2]] = 1
+        state_encoded[state[0]] = 1
+        state_encoded[locations + int(state[1])] = 1
+        state_encoded[locations + max_hours + int(state[2])] = 1
         
         return state_encoded
 
@@ -79,11 +79,11 @@ class CabDriver():
             requests =15
 
         possible_actions_index = random.sample(range(1, (locations-1)*locations +1), requests) # (0,0) is not considered as customer request
-        actions = [self.action_space[i] for i in possible_actions_idx]
+        actions = [self.action_space[i] for i in possible_actions_index]
        
-        actions.append([0,0])
+        actions.append((0,0))
 
-        return possible_actions_index,actions   
+        return possible_actions_index, actions   
 
 
     def reward_func(self, state, action, Time_matrix):
@@ -139,13 +139,36 @@ class CabDriver():
         pickup2drop_time = 0
         
         if pickup_loc == 0 and drop_loc == 0:
-            noRide_time = 1
+            noRide_time += 1
+            
             next_loc = start_loc
+            drop_time = noRide_time
+            drop_day = start_day
+            
+            if drop_time >= max_hours:
+                drop_time = drop_time - max_hours
+                
+                drop_day = drop_day + 1
+                if drop_day >= max_days:
+                    drop_day = drop_day - max_days
+            
             self.total_ridetime = self.total_ridetime + noRide_time
+            
         elif start_loc == pickup_loc:
             ride_time = Time_matrix[pickup_loc, drop_loc, int(start_time), int(start_day)]
             next_loc = drop_loc
+            drop_time = start_time + ride_time
+            drop_day = start_day
+            
+            if drop_time >= max_hours:
+                drop_time = drop_time - max_hours
+                
+                drop_day = drop_day + 1
+                if drop_day >= max_days:
+                    drop_day = drop_day - max_days
+            
             self.total_ridetime += ride_time
+            
         else:
             ride2pick_time = Time_matrix[start_loc, pickup_loc, int(start_time), int(start_day)]
             pickup_time = start_time + ride2pick_time
@@ -179,9 +202,9 @@ class CabDriver():
         else:
             terminal = False
         
-        next_state = [next_loc, drop_time, drop_day]
+        next_state = (int(next_loc), int(drop_time), int(drop_day))
         
-        return next_state, terminal
+        return next_state, terminal, int(self.total_ridetime)
     
     def isTerminalAchieved(self):
         if self.total_ridetime > self.maxhours2terminal:
