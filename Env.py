@@ -3,65 +3,80 @@
 import numpy as np
 import math
 import random
+from itertools import permutations
 
 # Defining hyperparameters
-locations = 5 # number of cities, ranges from 1 ..... m
-max_hours = 24 # number of hours, ranges from 0 .... t-1
-max_days = 7  # number of days, ranges from 0 ... d-1
-cost = 5 # Per hour fuel and other costs
-revenue = 9 # per hour revenue from a passenger
+m = 5 # number of cities, ranges from 1 ..... m
+t = 24 # number of hours, ranges from 0 .... t-1
+d = 7  # number of days, ranges from 0 ... d-1
+C = 5 # Per hour fuel and other costs
+R = 9 # per hour revenue from a passenger
 
 
 class CabDriver():
 
     def __init__(self):
         """initialise your state and define your action space and state space"""
-        # action_space will of (p,q) where p->pickup location, q->drop location
+        #self.action_space = list(permutations([i for i in range(m)], 2)) + [(0,0)] ## All permutaions of the actions and no action
         self.action_space = [(0,0),
-                             (0,1), (0,2), (0,3), (0,4),
-                             (1,0), (1,2), (1,3), (1,4),
-                             (2,1), (2,0), (2,3), (2,4),
-                             (3,1), (3,2), (3,0), (3,4),
-                             (4,1), (4,2), (4,3), (4,0)]
+                     (0,1), (0,2), (0,3), (0,4),
+                     (1,0), (1,2), (1,3), (1,4),
+                     (2,1), (2,0), (2,3), (2,4),
+                     (3,1), (3,2), (3,0), (3,4),
+                     (4,1), (4,2), (4,3), (4,0)]
         
-        #state_space id defined by current location, hour of the day and day of the week i.e (locations, max_hours, max_days)
-        self.state_space = [[loc,hour,day] for loc in range(locations) for hour in range(max_hours) for day in range(max_days)]
-        
-        self.state_init = [np.random.randint(1,locations), np.random.randint(1,max_hours), np.random.randint(1,max_days)]
+        self.state_space = [(loc, tim, day) for loc in range(m) for tim in range(t) for day in range(d)] ##
 
+        self.state_init = [np.random.randint(1,m), np.random.randint(1,t), np.random.randint(1,d)]
+        
         self.days2terminal = 30            # to achieve terminal state OR an episode to complete
-        self.maxhours2terminal = max_hours * self.days2terminal
+        self.maxhours2terminal = t * self.days2terminal
         self.total_ridetime = 0
         
         # Start the first round
         self.reset()
 
+
     ## Encoding state (or state-action) for NN input
+
     def state_encod_arch1(self, state):
         """convert the state into a vector so that it can be fed to the NN. This method converts a given state into a vector format. Hint: The vector is of size m + t + d."""
         
         # initiate a list of size (m+t+d) with 0
-        state_encoded = [0] * (locations + max_hours + max_days)    
+        encoded_state = [0] * (m + t + d)
         
-        # Based on the input from state information, encode the list with 1 w.r.t its location, time and day.
-        state_encoded[state[0]] = 1
-        state_encoded[locations + int(state[1])] = 1
-        state_encoded[locations + max_hours + int(state[2])] = 1
-        
-        return state_encoded
+        encoded_state[state[0]] = 1  ## set the location value into vector
+        encoded_state[m+state[1]] = 1
+        encoded_state[m+t+state[2]] = 1## set time value into vector
+        return encoded_state
+
+    def action_encod_arch1(self, action):
+        """convert the state into a vector so that it can be fed to the NN. This method converts a given state into a vector format. Hint: The vector is of size m + t + d."""
+        encoded_action = [0] * (m + m)
+        if action[0] != 0 and action[1] != 0:
+            encoded_action[action[0]] = 1     ## set pickup location:
+            encoded_action[m + action[1]] = 1     ## set drop location
+        return encoded_action
 
 
-    # Use this function if you are using architecture-2 
-#    def state_encod_arch2(self, state, action):
-#         """convert the (state-action) into a vector so that it can be fed to the NN. This method converts a given state-action pair into a vector format. Hint: The vector is of size m + t + d + m + m."""
-        
-#        return state_encoded
+    # Use this function if you are using architecture-2
+    def state_encod_arch2(self, state, action):
+        """convert the (state-action) into a vector so that it can be fed to the NN. This method converts a given state-action pair into a vector format. Hint: The vector is of size m + t + d + m + m."""
+        encoded_state = [0] * (m+t+d+m+m)  ## initialize vector state + action space
+        encoded_state[state[0]] = 1  ## set the location value into vector
+        encoded_state[m+state[1]] = 1  ## set time value into vector
+        encoded_state[m+t+state[2]] = 1  ## set day value into vector
+        if (action[0] != 0):
+            encoded_state[m+t+d+action[0]] = 1     ## set pickup location
+        if (action[1] != 0):
+            encoded_state[m+t+d+m+action[1]] = 1     ## set drop location
+        return encoded_state
 
 
     ## Getting number of requests
 
     def requests(self, state):
-        """Determining the number of requests basis the location. 
+        """Determining the number of requests basis the location.
         Use the table specified in the MDP and complete for rest of the locations"""
         location = state[0]
         if location == 0:
@@ -78,141 +93,128 @@ class CabDriver():
         if requests >15:
             requests =15
 
-        possible_actions_index = random.sample(range(1, (locations-1)*locations +1), requests) # (0,0) is not considered as customer request
+        possible_actions_index = random.sample(range(1, (m-1)*m +1), requests) # (0,0) is not considered as customer request
         actions = [self.action_space[i] for i in possible_actions_index]
-       
+
+
         actions.append((0,0))
 
-        return possible_actions_index, actions   
+        # Update index for [0, 0]
+
+        possible_actions_index.append(self.action_space.index((0,0)))
+
+        return possible_actions_index, actions
 
 
     def reward_func(self, state, action, Time_matrix):
         """Takes in state, action and Time-matrix and returns the reward"""
-        start2pickup_time = 0
-        pickup2drop_time = 0
         
-        start_loc = state[0]
-        start_time = state[1]
-        start_day = state[2]
-        
+        curr_loc = state[0]
+        curr_time = state[1]
+        curr_day = state[2]
         pickup_loc = action[0]
         drop_loc = action[1]
         
-        if action == [0,0]:
-            reward = -cost
-        else:
-            if start_loc != pickup_loc:
-                start2pickup_time = Time_matrix[start_loc, pickup_loc, int(start_time), int(start_day)]
-                pickup_time = start_time + start2pickup_time
-                pickup_day = start_day
-                
-                if pickup_time >= max_hours:
-                    pickup_time = pickup_time - max_hours
-                    pickup_day = pickup_day + 1
-                    if pickup_day >= max_days:
-                        pickup_day = pickup_day - max_days
-                        
-                pickup2drop_time = Time_matrix[pickup_loc, drop_loc, int(pickup_time), int(pickup_day)]
-                
-                reward = (revenue * pickup2drop_time) - (cost * pickup2drop_time) - (cost * start2pickup_time) 
-                    
-            else:
-                pickup2drop_time = Time_matrix[pickup_loc, drop_loc, int(start_time), int(start_day)]
-                
-                reward = (revenue * pickup2drop_time) - (cost * pickup2drop_time)
+        if (pickup_loc) == 0 and (drop_loc == 0):
+            reward = -C
+
+        ## 2. Driver wants to have pickup and is at same location
+        elif pickup_loc == curr_loc:
+            rideTime = Time_matrix[curr_loc][drop_loc][curr_time][curr_day]
             
+            reward = (R * rideTime) - (C * rideTime)
+
+        ## 3. Driver wants to pickup and is at different location
+        else:
+            pickup_time = Time_matrix[curr_loc][pickup_loc][curr_time][curr_day]
+            updated_time, updated_day = self.calc_updated_day_time(curr_time, curr_day, pickup_time)
+            
+            rideTime =  Time_matrix[pickup_loc][drop_loc][updated_time][updated_day]
+            
+            reward = (R * rideTime) - (C * pickup_time) - (C * rideTime)
+
         return reward
 
     def next_state_func(self, state, action, Time_matrix):
         """Takes state and action as input and returns next state"""
-        
-        start_loc = state[0]
-        start_time = state[1]
-        start_day = state[2]
-        
+        ## Find current state of driver
+        curr_loc = state[0]
+        curr_time = state[1]
+        curr_day = state[2]
         pickup_loc = action[0]
         drop_loc = action[1]
-        
-        noRide_time = 0
+
+        ## reward depends of time, lets initialize
+        total_time = 0
+        norideTime = 0
         ride_time = 0
-        ride2pick_time = 0
-        pickup2drop_time = 0
-        
-        if pickup_loc == 0 and drop_loc == 0:
-            noRide_time += 1
+        pickup_time = 0
+
+        ## next state depends on possible actions taken by cab driver
+        ## There are 3 cases for the same
+        ## 1. Cab driver refuse i.e. action (0,0)
+        if (pickup_loc) == 0 and (drop_loc == 0):
+            norideTime = 1
+            pickup_time = 0
+            ride_time = 0
             
-            next_loc = start_loc
-            drop_time = noRide_time
-            drop_day = start_day
+            next_loc = curr_loc
+            curr_time = curr_time + norideTime
             
-            if drop_time >= max_hours:
-                drop_time = drop_time - max_hours
-                
-                drop_day = drop_day + 1
-                if drop_day >= max_days:
-                    drop_day = drop_day - max_days
+            updated_time, updated_day = self.calc_updated_day_time(curr_time, curr_day, norideTime)
+            curr_time = updated_time
+            curr_day = updated_day
+
+        ## 2. Driver wants to have pickup and is at same location
+        elif pickup_loc == curr_loc:
+            pickup_time = 0
+            norideTime = 0
             
-            self.total_ridetime = self.total_ridetime + noRide_time
-            
-        elif start_loc == pickup_loc:
-            ride_time = Time_matrix[pickup_loc, drop_loc, int(start_time), int(start_day)]
-            next_loc = drop_loc
-            drop_time = start_time + ride_time
-            drop_day = start_day
-            
-            if drop_time >= max_hours:
-                drop_time = drop_time - max_hours
-                
-                drop_day = drop_day + 1
-                if drop_day >= max_days:
-                    drop_day = drop_day - max_days
-            
-            self.total_ridetime += ride_time
-            
-        else:
-            ride2pick_time = Time_matrix[start_loc, pickup_loc, int(start_time), int(start_day)]
-            pickup_time = start_time + ride2pick_time
-            pickup_day = start_day
-                
-            if pickup_time >= max_hours:
-                pickup_time = pickup_time - max_hours
-                
-                pickup_day = pickup_day + 1
-                if pickup_day >= max_days:
-                    pickup_day = pickup_day - max_days
-                        
-            pickup2drop_time = Time_matrix[pickup_loc, drop_loc, int(pickup_time), int(pickup_day)]
-            drop_time = pickup_time + pickup2drop_time
-            drop_day = pickup_day
-            
-            if drop_time >= max_hours:
-                drop_time = drop_time - max_hours
-                
-                drop_day = drop_day + 1
-                if drop_day >= max_days:
-                    drop_day = drop_day - max_days
+            ride_time = Time_matrix[curr_loc][drop_loc][curr_time][curr_day]
+            updated_time, updated_day = self.calc_updated_day_time(curr_time, curr_day, ride_time)
             
             next_loc = drop_loc
+            curr_time = updated_time
+            curr_day = updated_day
+
+        ## 3. Driver wants to pickup and is at different location
+        else:
+            norideTime = 0
+            pickup_time = Time_matrix[curr_loc][pickup_loc][curr_time][curr_day]
+            updated_time, updated_day = self.calc_updated_day_time(curr_time, curr_day, pickup_time)
             
-            next_time = ride2pick_time + pickup2drop_time
-            self.total_ridetime += next_time
-        
-        if self.total_ridetime > self.maxhours2terminal:
-            terminal = True
-        else:
-            terminal = False
-        
-        next_state = (int(next_loc), int(drop_time), int(drop_day))
-        
-        return next_state, terminal, int(self.total_ridetime)
-    
-    def isTerminalAchieved(self):
-        if self.total_ridetime > self.maxhours2terminal:
-            terminal = True
-        else:
-            terminal = False
-        
-        return terminal
+            ride_time =  Time_matrix[pickup_loc][drop_loc][updated_time][updated_day]
+            updated_time, updated_day = self.calc_updated_day_time(updated_time, updated_day, ride_time)
+            
+            next_loc  = drop_loc
+            curr_time = updated_time
+            curr_day = updated_day
+
+        total_time = norideTime + pickup_time + ride_time
+        #print('total travel time',total_time)
+        #updated_time, updated_day = self.calc_updated_day_time(curr_time, curr_day, total_time)
+        #print('updated time',updated_time)
+        #print('updated day',updated_day)
+        next_state = [next_loc, curr_time, curr_day]
+
+        return next_state, total_time
+
+    def calc_updated_day_time(self, time, day, duration):
+        '''
+        Takes the current day, time and time duration and returns updated day and time based on the time duration of travel
+        '''
+        if time >= t:
+            time = time - t
+            day = day + 1
+            if day >= d:
+                day = day - d
+                
+        return time, day
 
     def reset(self):
+        self.state_init = random.choice(self.state_space)
         return self.action_space, self.state_space, self.state_init
+
+
+c = CabDriver()
+print(c.requests([0, 1, 5]))
